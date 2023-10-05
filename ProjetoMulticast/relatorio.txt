@@ -1,15 +1,17 @@
+Como eu precisei fazer o trabalho testando localmente o formato do arquivo multicast.txt deve ser:
+192.168.0.2 5001 host1
+192.168.0.35 5002 host2
 
-Só consegui testar localmente por isso no arquivo multicast.txt tem
-<port> <nome>
+Para testar localmente:
+localhost 5001 host1
+localhost 5002 host2
 
-Exemplo:
-
-5001 host1
-5002 host2
-5003 host3
-
-Para funcionar entre computadores bastaria fazer algumas alterações no código. 
-Mas para testar basta rodar em múltiplos terminais e rodar assim:
-
+Para executar:
 python main.py host1 
 python main.py host2 
+
+
+Foi implementado o heartbeat, porém não imprimi na tela para não poluir, mas pode verificar o código! 
+
+
+

@@ -16,27 +16,27 @@ host_ports = {}
 
 with open('multicast.txt', 'r') as file:
     for line in file:
-        port, host = line.strip().split()
-        host_ports[host] = int(port)
+        ip, port, host = line.strip().split()
+        host_ports[host] = (ip, int(port))
 
 print(host_ports)
 
 
-def get_current_host_port(host_ports, host_name):
+def get_current_address_info(host_ports, host_name):
     # Obtém a porta do host atual
-    current_host_port = host_ports.get(host_name)
+    current_address_info = host_ports.get(host_name)
     # Verifica se o nome do host é válido
-    if not current_host_port:
+    if not current_address_info:
         logging.error(f"O host '{host_name}' não possui uma porta associada.")
         sys.exit()
-    return current_host_port
+    return current_address_info
 
 
 # Obtém o nome do host a partir dos argumentos de linha de comando
 host_name = sys.argv[1]
 
 # Obtém a porta do host atual
-current_host_port = get_current_host_port(host_ports, host_name)
+current_address_info = get_current_address_info(host_ports, host_name)
 # Remove o host
 del host_ports[host_name]
 
@@ -79,54 +79,55 @@ def remove_online_host(host):
 global_amount = 0
 
 
-def _send_message_(message, host, port):
+def _send_message_(message, host, address):
+    ip, port = address
     try:
-        print(f"sending {message.encode()} to {localhost}, {port}")
-        sock.sendto(message.encode(), (localhost, port))
+        print(f'Sending "{message}" to ({ip}, {port})')
+        sock.sendto(message.encode(), (ip, port))
         sock.settimeout(TIMEOUT)
         response, address = sock.recvfrom(1024)
         decoded_response = response.decode()
         if decoded_response == 'acknowledge':
-            print("acknowledge")
+            print("Acknowledged")
             add_online_host(port)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            file_content.append(f"{timestamp} || Mensagem: {message} enviada para {localhost}, {port}")
+            file_content.append(f'{timestamp} || Mensagem: "{message}" enviada para {ip}, {port}')
         else:
             # Manda a mensagem novamente caso não tiver sido recebida
-            _send_message_(message, host, port)
+            _send_message_(message, host, address)
     except socket.timeout:
         print(f"Timeout: A mensagem não foi recebida em {TIMEOUT} segundos.")
         # Manda a mensagem novamente caso tenha ocorrido timeout
         global global_amount
         global_amount += 1
         if global_amount < 3:
-            _send_message_(message, host, port)
+            _send_message_(message, host, address)
         global_amount = 0
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        file_content.append(f"{timestamp} || Mensagem: {message} não enviada para {localhost}, {port}")
+        file_content.append(f'{timestamp} || Mensagem: "{message}" não enviada para {ip}, {port}')
     except Exception as e:
         logging.warning(f"Error: {e}")
 
 
 # Função para enviar mensagens
 def send_message(message):
-    for host, port in host_ports.items():
-        _send_message_(message, host, port)
+    for host, address in host_ports.items():
+        _send_message_(message, host, address)
 
 
 # Função para receber mensagens
 def receive_message():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind((localhost, current_host_port))
+        sock.bind(current_address_info)
         while True:
             data, address = sock.recvfrom(1024)
+            ip, port = address
             decoded_data = data.decode()
             if decoded_data == 'heartbeat':
                 add_online_host(port)
             else:
-                host, port = address
-                print(f"Recebido de {address}: {decoded_data}")
-                sock.sendto("acknowledge".encode(), (localhost, port))  # MULTICAST_PORT))
+                print(f'Received "{decoded_data}" from ({ip}, {port})')
+                sock.sendto("acknowledge".encode(), (ip, port))  # MULTICAST_PORT))
                 add_online_host(port)
                 print(f"Digite uma mensagem: ")
 
@@ -135,13 +136,14 @@ def receive_message():
 def send_message_heartbeat():
     message = "heartbeat"
     while True:
-        for host, port in host_ports.items():
+        for host, address in host_ports.items():
+            ip, port = address
             try:
-                logging.info(f'Sending "heartbeat" to ({localhost}, {port})')
-                sock.sendto("heartbeat".encode(), (localhost, port))
+                logging.info(f'Sending "heartbeat" to ({ip}, {port})')
+                sock.sendto("heartbeat".encode(), (ip, port))
                 sock.settimeout(TIMEOUT)
             except socket.timeout:
-                logging.warning(f"({localhost}, {port}) seems to be offline.")
+                logging.warning(f"({ip}, {port}) seems to be offline.")
                 remove_online_host(port)
             except Exception as e:
                 logging.warning(f"Error: {e}")
@@ -156,16 +158,16 @@ if __name__ == '__main__':
     recebendo_thread = threading.Thread(target=receive_message)
     recebendo_thread.start()
 
-    # # Thread para heartbeat
-    # heartbeat_thread = threading.Thread(target=send_message_heartbeat)
-    # heartbeat_thread.start()
+    # Thread para heartbeat
+    heartbeat_thread = threading.Thread(target=send_message_heartbeat)
+    heartbeat_thread.start()
 
     # Envia mensagens
     while True:
         message = input("Digite uma mensagem: \n")
         if message.lower() == 'exit':
             file_name = 'output-' + host_name + '.txt'
-            with open(file_name, 'w') as file:
+            with open(file_name, 'a') as file:
                 for fc in file_content:
                     file.write(fc + '\n')
             os._exit(0)  # Exit with status 0 (success)
