@@ -5,6 +5,7 @@ import time
 import logging
 import os
 import datetime
+import select
 
 # timeout poderia ajustar automatico
 # ajustar para dois delta t - basicamente min = 1 s
@@ -12,6 +13,7 @@ import datetime
 # reajuste para mais tempo caso seja maior
 # timeout por cliente
 # timeout do cliente sempre 0.5 OK
+# OK!!!
 
 # menu 
 # setar atraso artificial + 0.5 do cliente - para esse tempo depois responde que recebeu - simular um problema
@@ -27,7 +29,8 @@ import datetime
 MULTICAST_GROUP = '224.1.1.1'
 MULTICAST_PORT = 5007
 localhost = 'localhost'
-TIMEOUT = 2
+TIMEOUT_HEARTBEAT = 2
+DELAY = 0
 
 host_ports = {}
 
@@ -94,38 +97,66 @@ global_amount = 0
 
 def _send_message_(message, host, address):
     ip, port = address
-    await_time = host_ports[host][-1]*2
-    print(f"timeout={await_time/2}")
+    await_time = host_ports[host][-1] * 2
+    print(f"Timeout={host_ports[host][-1]}\tAwait time={await_time}")
+
     try:
         start_time = time.time()
         print(f'Sending "{message}" to ({ip}, {port})')
         sock.sendto(message.encode(), (ip, port))
-        sock.settimeout(await_time)
-        response, address = sock.recvfrom(1024)
-        decoded_response = response.decode()
-        if decoded_response == 'acknowledge':
-            end_time = time.time()
-            print(f"Acknowledged {end_time-start_time}")
-            change_timeout_host(host, end_time-start_time)
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            file_content.append(f'{timestamp} || Mensagem: "{message}" enviada para {ip}, {port}')
-        else:
-            # Manda a mensagem novamente caso não tiver sido recebida
-            _send_message_(message, host, address)
-    except socket.timeout:
-        change_timeout_host(host, await_time * 2)
-        # print(f"Timeout: A mensagem não foi recebida em {TIMEOUT} segundos.")
-        # Manda a mensagem novamente caso tenha ocorrido timeout
-        global global_amount
-        global_amount += 1
-        if global_amount < 2:
-            _send_message_(message, host, address)
-        global_amount = 0
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        file_content.append(f'{timestamp} || Mensagem: "{message}" não enviada para {ip}, {port}')
+
+        # Set a timer for timeout
+        timeout_timer = start_time + await_time
+
+        while True:
+            current_time = time.time()
+
+            if current_time > timeout_timer:
+                # Handle timeout
+                print("Timeout occurred")
+                change_timeout_host(host, host_ports[host][-1]*2)
+                break
+
+            ready = select.select([sock], [], [], timeout_timer - current_time)
+
+            if ready[0]:
+                response, address = sock.recvfrom(1024)
+                decoded_response = response.decode()
+                parts = decoded_response.split('/')
+
+                if parts[0] == 'acknowledge':
+                    received_time = float(parts[1])
+                    time_difference = start_time - received_time
+
+                    if time_difference < 0:
+                        # Válido, recebeu!
+                        print(f"Acknowledged {float(parts[2]) - float(parts[1])}")
+                        new_timeout = float(float(parts[2]) - float(parts[1]))
+                        if new_timeout < 1:
+                            # Coloquei isso aqui pois para mim não faz sentido diminuir mais que 1, perde mensagem atoa
+                            change_timeout_host(host, 1)
+                        else:
+                            change_timeout_host(host, new_timeout)
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        file_content.append(f'{timestamp} || Mensagem: "{message}" enviada para {ip}, {port}')
+                        break  # Exit the loop if a valid response is received
+                    else:
+                        # Acknowledge atrasado
+                        # print(f"acknowledge atrasado: {await_time * 2}")
+                        # Continue waiting for another response
+                        pass
+                else:
+                    # Manda a mensagem novamente caso não tiver sido recebida
+                    _send_message_(message, host, address)
+                    break  # Exit the loop if sending the message again
+
+            else:
+                # Continue waiting for response
+                # print("Continuing to wait for response...")
+                pass
+
     except Exception as e:
-        pass
-        # logging.warning(f"Error: {e}")
+        logging.warning(f"Error: {e}")
 
 
 # Função para enviar mensagens
@@ -140,6 +171,7 @@ def send_message(message):
     for h in offline_hosts:
         print(f"Host: {h} seems to be offline.")
 
+
 # Função para receber mensagens
 def receive_message():
     elapsed_time = 1
@@ -151,6 +183,7 @@ def receive_message():
         while True:
             try:
                 data, address = sock.recvfrom(1024)
+                received_time = time.time()
                 ip, port = address
                 decoded_data = data.decode()
                 # Separar a string usando '/'
@@ -163,7 +196,9 @@ def receive_message():
                     last_heartbeat = time.time()
                 else:
                     print(f'Received "{message}" from ({ip}, {port})')
-                    sock.sendto("acknowledge".encode(), (ip, port))  # MULTICAST_PORT))
+                    time.sleep(DELAY)
+                    replied_time = time.time()
+                    sock.sendto(f"acknowledge/{received_time}/{replied_time}/".encode(), (ip, port))  # MULTICAST_PORT))
                     print(f"Digite uma mensagem: ")
             except Exception as e:
                 elapsed_time = time.time() - last_heartbeat
@@ -181,7 +216,7 @@ def send_message_heartbeat():
             try:
                 logging.info(f'Sending "heartbeat" to ({ip}, {port})')
                 sock.sendto(message.encode(), (ip, port))
-                sock.settimeout(TIMEOUT)
+                sock.settimeout(TIMEOUT_HEARTBEAT)
             except socket.timeout:
                 logging.warning(f"{host}: ({ip}, {port}) seems to be offline.")
                 remove_online_host(host)
@@ -205,6 +240,10 @@ if __name__ == '__main__':
     heartbeat_thread = threading.Thread(target=send_message_heartbeat)
     heartbeat_thread.start()
 
+    menu = input("Setar atraso artificial? Y/n\n")
+    if menu == 'Y':
+        DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
+
     # Envia mensagens
     while True:
         message = input("Digite uma mensagem: \n")
@@ -216,3 +255,5 @@ if __name__ == '__main__':
             os._exit(0)  # Exit with status 0 (success)
         else:
             send_message(message)
+
+
