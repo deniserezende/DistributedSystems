@@ -19,7 +19,7 @@ import select
 # setar atraso artificial + 0.5 do cliente - para esse tempo depois responde que recebeu - simular um problema
 # enviar mensagem
 
-#acknowledge junto com o delta que demorou pra responder ok
+# acknowledge junto com o delta que demorou pra responder ok
 
 # o heartbeat desliga ele da sua lista e religa, então tem que ficar mandando para eles ok
 
@@ -225,7 +225,7 @@ def send_message_heartbeat():
                 # desligar o host
                 pass
                 # logging.warning(f"Error: {e}")
-        time.sleep(2)  # Espera 20 segundos antes de enviar o próximo heartbeat
+        time.sleep(2) 
 
 
 # Exemplo de uso
@@ -239,11 +239,7 @@ if __name__ == '__main__':
     # Thread para heartbeat
     heartbeat_thread = threading.Thread(target=send_message_heartbeat)
     heartbeat_thread.start()
-
-    menu = input("Setar atraso artificial? Y/n\n")
-    if menu == 'Y':
-        DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
-
+    
     # Envia mensagens
     while True:
         message = input("Digite uma mensagem: \n")
@@ -253,7 +249,27 @@ if __name__ == '__main__':
                 for fc in file_content:
                     file.write(fc + '\n')
             os._exit(0)  # Exit with status 0 (success)
+        elif message.lower() == '_atraso_':
+            DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
         else:
             send_message(message)
+
+
+    # menu = input("Setar atraso artificial? Y/n\n")
+    # if menu == 'Y':
+    #     DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
+
+    # # Envia mensagens
+    # while True:
+    #     message = input("Digite uma mensagem: \n")
+    #     if message.lower() == 'exit':
+    #         file_name = 'output-' + host_name + '.txt'
+    #         with open(file_name, 'a') as file:
+    #             for fc in file_content:
+    #                 file.write(fc + '\n')
+    #         os._exit(0)  # Exit with status 0 (success)
+    #     else:
+    #         send_message(message)
+
 
 
