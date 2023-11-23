@@ -38,7 +38,7 @@ with open('multicast.txt', 'r') as file:
     for line in file:
         ip, port, host = line.strip().split()
         # (x,y, 1 é online e 0 é offline, timeout)
-        host_ports[host] = (ip, int(port), 0, 2) 
+        host_ports[host] = (ip, int(port), 0, 2, time.time()) 
 
 print(host_ports)
 
@@ -81,14 +81,14 @@ sock = config_socket()
 file_content = []
 
 
-def add_online_host(host):
-    host_ports[host] = host_ports[host][:2] + (1,) + host_ports[host][3:] # Para mudar para 1 (online)
+def add_online_host(host, last_heartbeat):
+    host_ports[host] = host_ports[host][:2] + (1,) + (host_ports[host][3],) + (last_heartbeat,)  # Para mudar para 1 (online)
 
 def remove_online_host(host):
     host_ports[host] = host_ports[host][:2] + (0,)  + host_ports[host][3:] # Para mudar para 0 (offline)
 
 def change_timeout_host(host, new_timeout):
-    host_ports[host] = host_ports[host][:3] + (new_timeout,)
+    host_ports[host] = host_ports[host][:3] + (new_timeout,) + host_ports[-1]
 
 
 
@@ -97,8 +97,8 @@ global_amount = 0
 
 def _send_message_(message, host, address):
     ip, port = address
-    await_time = host_ports[host][-1] * 2
-    print(f"Timeout={host_ports[host][-1]}\tAwait time={await_time}")
+    await_time = host_ports[host][3] * 2
+    print(f"Timeout={host_ports[host][3]}\tAwait time={await_time}")
 
     try:
         start_time = time.time()
@@ -114,7 +114,7 @@ def _send_message_(message, host, address):
             if current_time > timeout_timer:
                 # Handle timeout
                 print("Timeout occurred")
-                change_timeout_host(host, host_ports[host][-1]*2)
+                change_timeout_host(host, host_ports[host][3]*2)
                 break
 
             ready = select.select([sock], [], [], timeout_timer - current_time)
@@ -133,7 +133,8 @@ def _send_message_(message, host, address):
                         print(f"Acknowledged {float(parts[2]) - float(parts[1])}")
                         new_timeout = float(float(parts[2]) - float(parts[1]))
                         if new_timeout < 1:
-                            # Coloquei isso aqui pois para mim não faz sentido diminuir mais que 1, perde mensagem atoa
+                            # Em uma rede com velocidade alta é certeiro que a mensagem chegará nesse tempo, 
+                            # mantive isso para não perder mensagem atoa
                             change_timeout_host(host, 1)
                         else:
                             change_timeout_host(host, new_timeout)
@@ -156,14 +157,15 @@ def _send_message_(message, host, address):
                 pass
 
     except Exception as e:
-        logging.warning(f"Error: {e}")
+        # logging.warning(f"Error: {e}")
+        pass
 
 
 # Função para enviar mensagens
 def send_message(message):
     offline_hosts = []
     for host, address in host_ports.items():
-        ip, port, status, timeout = address  
+        ip, port, status, timeout, last_heartbeat = address  
         if status == 1:
             _send_message_(message, host, address[:2])
         else:
@@ -172,14 +174,20 @@ def send_message(message):
         print(f"Host: {h} seems to be offline.")
 
 
+def check_hosts():
+    for host, address in host_ports.items():
+        if host_ports[host][2] == 1 and time.time()-host_ports[host][-1] > 3:
+            remove_online_host(host)
+
 # Função para receber mensagens
 def receive_message():
+    HEARTBEAT_LIMIT = 2
     elapsed_time = 1
     last_heartbeat = time.time()  # Defina last_heartbeat antes do loop
     key = None
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind(current_address_info[:2]) 
-        sock.settimeout(5) # Configura um timeout de 5 segundos para ser esse o limite do heartbeat
+        sock.settimeout(HEARTBEAT_LIMIT) 
         while True:
             try:
                 data, address = sock.recvfrom(1024)
@@ -192,27 +200,32 @@ def receive_message():
                 message = parts[0]
                 if message == 'heartbeat':
                     key = parts[1]
-                    add_online_host(key)
                     last_heartbeat = time.time()
+                    add_online_host(key, last_heartbeat)
+                    check_hosts()
                 else:
                     print(f'Received "{message}" from ({ip}, {port})')
                     time.sleep(DELAY)
                     replied_time = time.time()
                     sock.sendto(f"acknowledge/{received_time}/{replied_time}/".encode(), (ip, port))  # MULTICAST_PORT))
                     print(f"Digite uma mensagem: ")
+            except socket.timeout:
+                if key != None:
+                    remove_online_host(key)
+                else:
+                    pass
             except Exception as e:
                 elapsed_time = time.time() - last_heartbeat
-                if elapsed_time > 5 and key != None:
+                if elapsed_time > HEARTBEAT_LIMIT and key != None:
                     remove_online_host(key)
                     key = None
-
 
 # Função para enviar heartbeat
 def send_message_heartbeat():
     while True:
         for host, address in host_ports.items():
             message = f"heartbeat/{host_name}"
-            ip, port, status, timeout = address
+            ip, port, status, timeout, last_heartbeat = address
             try:
                 logging.info(f'Sending "heartbeat" to ({ip}, {port})')
                 sock.sendto(message.encode(), (ip, port))
@@ -223,9 +236,9 @@ def send_message_heartbeat():
             except Exception as e:
                 remove_online_host(host)
                 # desligar o host
-                pass
+                # pass
                 # logging.warning(f"Error: {e}")
-        time.sleep(2) 
+        time.sleep(1) 
 
 
 # Exemplo de uso
@@ -240,6 +253,8 @@ if __name__ == '__main__':
     heartbeat_thread = threading.Thread(target=send_message_heartbeat)
     heartbeat_thread.start()
     
+    print("Digite _atraso_ quando quiser reajustar\n")
+
     # Envia mensagens
     while True:
         message = input("Digite uma mensagem: \n")
@@ -253,23 +268,6 @@ if __name__ == '__main__':
             DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
         else:
             send_message(message)
-
-
-    # menu = input("Setar atraso artificial? Y/n\n")
-    # if menu == 'Y':
-    #     DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
-
-    # # Envia mensagens
-    # while True:
-    #     message = input("Digite uma mensagem: \n")
-    #     if message.lower() == 'exit':
-    #         file_name = 'output-' + host_name + '.txt'
-    #         with open(file_name, 'a') as file:
-    #             for fc in file_content:
-    #                 file.write(fc + '\n')
-    #         os._exit(0)  # Exit with status 0 (success)
-    #     else:
-    #         send_message(message)
 
 
 

@@ -44,3 +44,24 @@
 #     except Exception as e:
 #         logging.warning(f"Error: {e}")
 #         # pass
+
+
+
+
+
+
+    # menu = input("Setar atraso artificial? Y/n\n")
+    # if menu == 'Y':
+    #     DELAY = float(input("Digite o valor do atraso do seu acknowledgement para simular que sua rede está fraca: "))
+
+    # # Envia mensagens
+    # while True:
+    #     message = input("Digite uma mensagem: \n")
+    #     if message.lower() == 'exit':
+    #         file_name = 'output-' + host_name + '.txt'
+    #         with open(file_name, 'a') as file:
+    #             for fc in file_content:
+    #                 file.write(fc + '\n')
+    #         os._exit(0)  # Exit with status 0 (success)
+    #     else:
+    #         send_message(message)
