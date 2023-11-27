@@ -1,0 +1,1 @@
+Não consegui implementar a parte de tratar erros, apenas implementei o quadro "síncrono" entre cliente e servidores.

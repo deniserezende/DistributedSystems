@@ -7,24 +7,6 @@ import os
 import datetime
 import select
 
-# timeout poderia ajustar automatico
-# ajustar para dois delta t - basicamente min = 1 s
-# reajusta por cliente 
-# reajuste para mais tempo caso seja maior
-# timeout por cliente
-# timeout do cliente sempre 0.5 OK
-# OK!!!
-
-# menu 
-# setar atraso artificial + 0.5 do cliente - para esse tempo depois responde que recebeu - simular um problema
-# enviar mensagem
-
-# acknowledge junto com o delta que demorou pra responder ok
-
-# o heartbeat desliga ele da sua lista e religa, então tem que ficar mandando para eles ok
-
-
-
 # Configurações do grupo multicast
 MULTICAST_GROUP = '224.1.1.1'
 MULTICAST_PORT = 5007
@@ -84,12 +66,13 @@ file_content = []
 def add_online_host(host, last_heartbeat):
     host_ports[host] = host_ports[host][:2] + (1,) + (host_ports[host][3],) + (last_heartbeat,)  # Para mudar para 1 (online)
 
+
 def remove_online_host(host):
-    host_ports[host] = host_ports[host][:2] + (0,)  + host_ports[host][3:] # Para mudar para 0 (offline)
+    host_ports[host] = host_ports[host][:2] + (0,) + host_ports[host][3:] # Para mudar para 0 (offline)
+
 
 def change_timeout_host(host, new_timeout):
     host_ports[host] = host_ports[host][:3] + (new_timeout,) + host_ports[-1]
-
 
 
 global_amount = 0
@@ -179,6 +162,7 @@ def check_hosts():
         if host_ports[host][2] == 1 and time.time()-host_ports[host][-1] > 3:
             remove_online_host(host)
 
+
 # Função para receber mensagens
 def receive_message():
     HEARTBEAT_LIMIT = 2
@@ -219,6 +203,7 @@ def receive_message():
                 if elapsed_time > HEARTBEAT_LIMIT and key != None:
                     remove_online_host(key)
                     key = None
+
 
 # Função para enviar heartbeat
 def send_message_heartbeat():
