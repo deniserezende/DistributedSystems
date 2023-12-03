@@ -1,181 +1,92 @@
+
 import socket
-import threading
-import json
+import struct
+import sys
+import time
+import logging
 
-class Quadro:
-    def __init__(self):
-        self.quadrados = []
-        self.lock = threading.Lock()
+# TODO
+# ReadMe
+# Como executa
 
-    def inserir_quadrado(self, quadrado):
-        with self.lock:
-            self.quadrados.append(quadrado)
+# TODO editar um retângulo
 
-    def editar_quadrado(self, indice, novas_coordenadas):
-        with self.lock:
-            if 0 <= indice < len(self.quadrados):
-                self.quadrados[indice]['coordenadas'] = novas_coordenadas
+from Board import Board
+from Heartbeat import HeartBeat
 
-    def obter_estado_quadro(self):
-        with self.lock:
-            return self.quadrados.copy()
-
-class ServidorQuadro:
-    def __init__(self, host, porta):
-        self.host = host
-        self.porta = porta
-        self.quadro = Quadro()
-        self.servidor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.servidor_socket.bind((host, porta))
-        self.servidor_socket.listen()
-
-    def aceitar_conexoes(self):
-        while True:
-            cliente_socket, endereco_cliente = self.servidor_socket.accept()
-            threading.Thread(target=self.lidar_com_cliente, args=(cliente_socket,)).start()
-
-    def lidar_com_cliente(self, cliente_socket):
-        with cliente_socket:
-            while True:
-                mensagem = cliente_socket.recv(1024)
-                if not mensagem:
-                    break
-
-                mensagem_decodificada = json.loads(mensagem.decode('utf-8'))
-                comando = mensagem_decodificada.get('comando')
-
-                if comando == 'obter_estado':
-                    estado_quadro = self.quadro.obter_estado_quadro()
-                    cliente_socket.send(json.dumps({'estado_quadro': estado_quadro}).encode('utf-8'))
-
-                elif comando == 'inserir_quadrado':
-                    quadrado = mensagem_decodificada.get('quadrado')
-                    self.quadro.inserir_quadrado(quadrado)
-
-                elif comando == 'editar_quadrado':
-                    indice = mensagem_decodificada.get('indice')
-                    novas_coordenadas = mensagem_decodificada.get('novas_coordenadas')
-                    self.quadro.editar_quadrado(indice, novas_coordenadas)
-
-if __name__ == "__main__":
-    host = 'localhost'
-    porta = 12345
-
-    servidor_quadro = ServidorQuadro(host, porta)
-
-    # Iniciar thread para aceitar conexões de clientes
-    threading.Thread(target=servidor_quadro.aceitar_conexoes).start()
-
-    # O restante do código aqui seria responsável por iniciar eleições,
-    # lidar com falhas e atualizar os clientes sobre o novo endereço do serviço.
+MULTICAST_GROUP = '224.1.1.1'
+MULTICAST_PORT = 5007
+localhost = 'localhost'
+TIMEOUT_HEARTBEAT = 2
+DELAY = 0
 
 
-#######
-
-# import socket
-# import threading
-#
-#
-# def receive_data(client_socket):
-#     while True:
-#         # Receber dados do servidor
-#         data = client_socket.recv(1024)
-#         if not data:
-#             break  # Se não houver mais dados, sair do loop
-#
-#         print(f"Recebido do servidor: {data.decode()}")
-#
-#
-# def main():
-#     # Configurar o cliente
-#     host = '127.0.0.1'
-#     port = 12345
-#
-#     # Criar um objeto de socket
-#     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#
-#     # Conectar ao servidor
-#     client_socket.connect((host, port))
-#
-#     # Iniciar uma nova thread para receber dados do servidor em segundo plano
-#     receive_thread = threading.Thread(target=receive_data, args=(client_socket,))
-#     receive_thread.start()
-#
-#     try:
-#         while True:
-#             # Enviar dados ao servidor
-#             message = input("Digite uma mensagem para o servidor (ou 'exit' para sair): ")
-#             client_socket.send(message.encode())
-#
-#             if message.lower() == 'exit':
-#                 break
-#
-#     except KeyboardInterrupt:
-#         pass  # Tratar interrupção do teclado (Ctrl+C)
-#
-#     finally:
-#         # Fechar a conexão com o servidor
-#         client_socket.close()
-#
-#
-# if __name__ == "__main__":
-#     main()
+def get_current_address_info(_host_ports, _host_name):
+    current_address_info = _host_ports.get(_host_name)
+    if not current_address_info:
+        logging.error(f"O host '{_host_name}' não possui uma porta associada.")
+        sys.exit()
+    return current_address_info
 
 
-##### HOST
+def config_socket(my_address):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack('b', 1))
+    if my_address is not None:
+        sock.bind(my_address)
+    else:
+        sock.bind(('', 0))
+    mreq = struct.pack('4sl', socket.inet_aton(MULTICAST_GROUP), socket.INADDR_ANY)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    return sock
 
-# import socket
-# import threading
-#
-#
-# def handle_client(client_socket):
-#     # Este é o código que lidará com as conexões individuais dos clientes
-#     # Aqui você pode adicionar lógica personalizada para processar as mensagens dos clientes
-#
-#     # Exemplo: Enviar uma mensagem de boas-vindas
-#     client_socket.send("Bem-vindo ao servidor!".encode())
-#
-#     while True:
-#         # Receber dados do cliente
-#         data = client_socket.recv(1024)
-#         if not data:
-#             break  # Se não houver mais dados, sair do loop
-#
-#         # Exemplo: Enviar de volta os dados recebidos
-#         client_socket.send(data)
-#
-#     # Fechar a conexão com o cliente quando o loop terminar
-#     client_socket.close()
-#
-#
-# def main():
-#     # Configurar o servidor
-#     host = '127.0.0.1'
-#     port = 12345
-#
-#     # Criar um objeto de socket
-#     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#
-#     # Configurar o socket para reutilizar a porta, permitindo reiniciar o servidor rapidamente
-#     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-#
-#     # Vincular o socket ao endereço e porta
-#     server_socket.bind((host, port))
-#
-#     # Começar a ouvir por conexões
-#     server_socket.listen(5)
-#
-#     print(f"[*] Escutando em {host}:{port}")
-#
-#     while True:
-#         # Aceitar a conexão do cliente
-#         client_socket, addr = server_socket.accept()
-#         print(f"[*] Conexão aceita de {addr[0]}:{addr[1]}")
-#
-#         # Iniciar uma nova thread para lidar com a conexão do cliente
-#         client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-#         client_handler.start()
-#
-#
-# if __name__ == "__main__":
-#     main()
+
+host_ports = {}
+
+with open('hosts.txt', 'r') as file:
+    for index, line in enumerate(file):
+        ip, port, host = line.strip().split()
+        host_ports[host] = (ip, int(port), 0, index, time.time())
+
+print(host_ports)
+
+host_name = sys.argv[1]
+my_address_info = get_current_address_info(host_ports, host_name)
+del host_ports[host_name]
+
+shared_sock = config_socket(my_address_info[:2])
+
+
+def create_or_connect_board(_host_name, _host_ports):
+    print("MENU:")
+    print("(1): Create a board")
+    print("(2): Connect to an existing board")
+    menu = int(input("Select an option: "))
+
+    if menu == 1:
+        board_name = input("Enter the name of the board: ")
+        board_owner = _host_name
+        is_host = True
+        all_objects_from_main_board = []  # A lista de objetos do canvas principal
+    elif menu == 2:
+        print(f"Make sure that the board you select is online.")
+        for idx, (board_name, _) in enumerate(_host_ports.items(), start=1):
+            print(f"({idx}): {board_name}")
+        choice = int(input("Select a board to connect: "))
+        board_name = list(_host_ports.keys())[choice - 1]
+        board_owner = board_name
+        is_host = False
+    else:
+        print("Invalid option. Exiting.")
+        sys.exit()
+
+    heartbeat_instance = HeartBeat(shared_sock, host_ports, host_name, my_address_info[:2], board_owner)
+    heartbeat_instance.start_threads()
+    board = Board(shared_sock, my_address_info[:2], is_host, board_name, _host_name, _host_ports, board_owner,
+                  heartbeat_instance.get_online_hosts, heartbeat_instance.stop_election)
+    board.create_board()
+
+
+if __name__ == '__main__':
+    # while True:
+    create_or_connect_board(host_name, host_ports)
